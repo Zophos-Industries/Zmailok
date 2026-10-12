@@ -60,6 +60,8 @@ enum Command {
     },
     /// Update zmailok to the newest version on crates.io (reinstalls with cargo)
     Update,
+    /// Your plan and how many domains you monitor
+    Account,
     /// Show every command with a short description
     Help,
 }
@@ -92,6 +94,12 @@ fn print_all_commands() {
     let mut out = String::new();
     list_commands(&cmd, 0, &mut out);
     print!("{out}");
+    println!("\nGetting started:");
+    println!("  zmailok check example.com          free check, no account needed");
+    println!("  zmailok login                      connect your GitHub account");
+    println!("  zmailok upgrade                    subscribe: $5/month for up to 5 monitored domains");
+    println!("  zmailok monitor add example.com    checked every 6 hours, email when the score drops");
+    println!("  zmailok account                    see your plan and monitored domains");
     println!("\nRun 'zmailok <COMMAND> --help' for the options of one command.");
 }
 
@@ -156,6 +164,7 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
             }
         },
         Command::Upgrade => monitor::upgrade(&api()?).await?,
+        Command::Account => monitor::account(&api()?).await?,
         Command::Help => {}
         Command::Update => update::run().await?,
         Command::Agent { config, once } => {

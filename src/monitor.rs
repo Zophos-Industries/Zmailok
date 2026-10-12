@@ -73,3 +73,15 @@ pub async fn check(api: &Api, raw: &str) -> Result<bool, AppError> {
     }
     Ok(passed)
 }
+
+/// `zmailok account`: whether the subscription is active and how many domains are monitored.
+pub async fn account(api: &Api) -> Result<(), AppError> {
+    let a = api.account().await?;
+    println!("{}", "Account".bold());
+    println!("  Plan:     {}", if a.active { "monitoring (subscribed)".green() } else { "free (no subscription)".yellow() });
+    println!("  Domains:  {} of {} monitored", a.domains, a.limit);
+    if !a.active {
+        println!("\n  Subscribe with: zmailok upgrade");
+    }
+    Ok(())
+}

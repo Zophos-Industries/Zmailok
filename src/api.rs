@@ -94,6 +94,10 @@ impl Api {
         Err(explain(status.as_u16(), &resp.text().await.unwrap_or_default()))
     }
 
+    pub async fn account(&self) -> Result<Account, AppError> {
+        self.send(self.http.get(self.url("/api/me")), true).await?.json().await.map_err(network_err)
+    }
+
     /// Exchanges the GitHub token from the device flow for a zmailok session token.
     pub async fn device_login(&self, github_token: &str) -> Result<String, AppError> {
         let req = self.http.post(self.url("/auth/github/device")).json(&json!({ "access_token": github_token }));
@@ -155,4 +159,11 @@ mod tests {
         assert!(explain(503, "x").to_string().contains("HTTP 503"));
         assert!(explain(418, &"y".repeat(500)).to_string().len() < 200);
     }
+}
+
+#[derive(Deserialize)]
+pub struct Account {
+    pub active: bool,
+    pub domains: u32,
+    pub limit: u32,
 }

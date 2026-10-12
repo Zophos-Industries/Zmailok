@@ -126,6 +126,7 @@ Nothing above needs an account. If you would rather not run checks yourself, a h
 ```sh
 zmailok login                  # log in with GitHub: you get a code, approve it in the browser
 zmailok upgrade                # prints the checkout link for the subscription
+zmailok account                # your plan and how many domains you monitor
 zmailok monitor add example.com
 zmailok monitor list
 zmailok monitor check example.com    # re-check right now (once a minute per domain)
