@@ -6,6 +6,7 @@ mod check;
 mod login;
 mod monitor;
 mod store;
+mod update;
 
 use std::net::Ipv4Addr;
 use std::process::ExitCode;
@@ -57,6 +58,8 @@ enum Command {
         #[arg(long)]
         once: bool,
     },
+    /// Update zmailok to the newest version on crates.io (reinstalls with cargo)
+    Update,
     /// Show every command with a short description
     Help,
 }
@@ -154,6 +157,7 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
         },
         Command::Upgrade => monitor::upgrade(&api()?).await?,
         Command::Help => {}
+        Command::Update => update::run().await?,
         Command::Agent { config, once } => {
             let ok = agent::run(&config, once).await?;
             return Ok(if ok { ExitCode::SUCCESS } else { ExitCode::from(1) });

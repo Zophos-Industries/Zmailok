@@ -115,6 +115,8 @@ zmailok agent --config agent.yaml          # keep running every interval
 
 ## Help
 
+`zmailok update` checks crates.io and reinstalls zmailok with cargo when a newer version exists.
+
 `zmailok help` lists every command. A wrong or incomplete command also shows that full list, and exits with code 2.
 
 ## Hosted monitoring (optional, paid)
