@@ -1,0 +1,29 @@
+[package]
+name = "zmailok"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Email deliverability checker. One command, one score, one fix list."
+repository = "https://github.com/Zophos-Industries/zmailok"
+readme = "README.md"
+keywords = ["email", "deliverability", "spf", "dkim", "dmarc", "cli"]
+categories = ["command-line-utilities", "networking"]
+
+[lib]
+name = "zmailok"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zmailok"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+trust-dns-resolver = "0.23"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+anyhow = "1"
+colored = "3"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
