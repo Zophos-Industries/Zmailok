@@ -7,7 +7,7 @@ description = "Email deliverability checker. One command, one score, one fix lis
 repository = "https://github.com/Zophos-Industries/zmailok"
 readme = "README.md"
 keywords = ["email", "deliverability", "spf", "dkim", "dmarc"]
-categories = ["command-line-utilities", "networking"]
+categories = ["command-line-utilities", "network-programming"]
 
 [lib]
 name = "zmailok"
