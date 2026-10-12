@@ -91,6 +91,32 @@ So `zmailok check example.com || echo "deliverability problem"` and CI checks wo
 - **Timeouts.** Each DNS lookup waits at most 5 seconds (and retries once). If a check's lookups still get no answer, it is shown as **could not be verified** and left out of the score: a bad network never turns into a failed check or a made-up fix. Run it again. zmailok ignores DNS servers from your system settings that do not answer, so a stale entry on an unused network adapter does not slow it down.
 - **Blacklists** are queried through your normal DNS resolver. Spamhaus refuses queries from some public resolvers (such as 8.8.8.8). zmailok does not treat that refusal as a listing, but it also cannot see a listing in that case.
 
+## Run an agent on your mail server
+
+`zmailok agent` runs next to your own mail server (Postfix) and checks it on an interval: its IP on the blacklists, bounces in the mail log, and the domain's score. It posts to a Slack or Discord webhook when something gets worse.
+
+```yaml
+# agent.yaml
+ip: 203.0.113.42                  # your mail server's IPv4
+domain: example.com
+mta_log: /var/log/mail.log        # or: journalctl (reads the postfix journal)
+interval: 1h                      # s, m, h or d; at least 1m
+webhook: https://hooks.slack.com/services/...   # optional
+```
+
+```sh
+zmailok agent --config agent.yaml --once   # one check, then exit (0 = OK, 1 = needs attention)
+zmailok agent --config agent.yaml          # keep running every interval
+```
+
+- **Bounce rate** = bounced / (sent + bounced) since the last run. It alerts above 5%, but only once there are at least 20 final outcomes.
+- **Complaints** are only counted from log lines that mention a complaint or feedback report. Postfix does not write those by default, so this stays at 0 unless your setup logs them.
+- The last read position and the last scores are kept in `~/.zmailok/agent-state.json`. The first run reads only the last 5 MB of a log file.
+
+## Help
+
+`zmailok help` lists every command. A wrong or incomplete command also shows that full list, and exits with code 2.
+
 ## Hosted monitoring (optional, paid)
 
 Nothing above needs an account. If you would rather not run checks yourself, a hosted service checks your domains **every 6 hours** and **emails you when a score drops by more than 10 points**. It costs $5/month for up to 5 domains.
@@ -127,7 +153,7 @@ cargo test      # parsing, scoring and CLI logic; no network needed
 cargo test -- --ignored   # only the slow test where every DNS lookup times out
 ```
 
-The checker is a library as well as a command: `zmailok::dns::check`, `zmailok::score::compute` and `zmailok::output::print_report` are public. The hosted service is a separate, private project.
+The checker is a library as well as a command: `zmailok::dns::check`, `zmailok::score::compute` and `zmailok::output::print_report` are public.
 
 ## License
 

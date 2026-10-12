@@ -114,3 +114,9 @@ mod tests {
         verify::verify(&results, &scored).unwrap();
     }
 }
+
+/// Is this IP listed on Spamhaus, Barracuda or SORBS? `Err(DnsTimeout)` = could not ask.
+pub async fn ip_blacklisted(ip: std::net::Ipv4Addr) -> Result<bool, AppError> {
+    let r = resolver::system_resolver().await.map_err(|e| AppError::LookupFailed(e.to_string()))?;
+    checks::check_blacklists(&r, ip).await
+}

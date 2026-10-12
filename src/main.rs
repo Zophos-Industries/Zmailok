@@ -1,3 +1,5 @@
+mod agent;
+mod agent_log;
 mod api;
 mod browser;
 mod check;
@@ -8,12 +10,12 @@ mod store;
 use std::net::Ipv4Addr;
 use std::process::ExitCode;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 use colored::Colorize;
 use zmailok::types::CheckOptions;
 
 #[derive(Parser)]
-#[command(name = "zmailok", version, about = "Email deliverability checker. One command, one score, one fix list.")]
+#[command(name = "zmailok", version, about = "Email deliverability checker. One command, one score, one fix list.", disable_help_subcommand = true)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -46,6 +48,17 @@ enum Command {
     },
     /// Subscribe to hosted monitoring ($5/month, up to 5 domains)
     Upgrade,
+    /// Run as a daemon on your own mail server: watches its IP, bounces, complaints and score
+    Agent {
+        /// Settings file (YAML)
+        #[arg(long, default_value = "agent.yaml")]
+        config: std::path::PathBuf,
+        /// Run one check and exit (0 = OK, 1 = needs attention)
+        #[arg(long)]
+        once: bool,
+    },
+    /// Show every command with a short description
+    Help,
 }
 
 #[derive(Subcommand)]
@@ -60,9 +73,52 @@ enum MonitorAction {
     Check { domain: String },
 }
 
+/// Every command and subcommand, with its one-line description, indented by depth.
+fn list_commands(cmd: &clap::Command, depth: usize, out: &mut String) {
+    for sub in cmd.get_subcommands().filter(|s| !s.is_hide_set()) {
+        let about = sub.get_about().map(|a| a.to_string()).unwrap_or_default();
+        out.push_str(&format!("{:indent$}{:<10}{about}\n", "", sub.get_name(), indent = 2 + depth * 2));
+        list_commands(sub, depth + 1, out);
+    }
+}
+
+fn print_all_commands() {
+    let cmd = Cli::command();
+    println!("{} — every command\n", "zmailok".bold());
+    println!("Usage: zmailok <COMMAND>\n\nCommands:");
+    let mut out = String::new();
+    list_commands(&cmd, 0, &mut out);
+    print!("{out}");
+    println!("\nRun 'zmailok <COMMAND> --help' for the options of one command.");
+}
+
 #[tokio::main]
 async fn main() -> ExitCode {
-    match run(Cli::parse().command).await {
+    let matches = match Cli::command().try_get_matches() {
+        Ok(m) => m,
+        Err(e) => {
+            if matches!(e.kind(), clap::error::ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand) {
+                print_all_commands(); // bare "zmailok": show the list
+                return ExitCode::SUCCESS;
+            }
+            if !e.use_stderr() {
+                e.print().ok(); // --help / --version
+                return ExitCode::SUCCESS;
+            }
+            // Unknown or incomplete command: name the problem, then show every command.
+            let problem = e.render().to_string();
+            eprintln!("{}", problem.lines().next().unwrap_or("error: invalid input").replace("error: ", &format!("{} ", "error:".red().bold())));
+            eprintln!();
+            print_all_commands();
+            return ExitCode::from(2);
+        }
+    };
+    let cli = Cli::from_arg_matches(&matches).unwrap_or_else(|e| e.exit());
+    if matches!(cli.command, Command::Help) {
+        print_all_commands();
+        return ExitCode::SUCCESS;
+    }
+    match run(cli.command).await {
         Ok(code) => code,
         Err(e) => {
             eprintln!("{} {e:#}", "error:".red().bold());
@@ -97,6 +153,11 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
             }
         },
         Command::Upgrade => monitor::upgrade(&api()?).await?,
+        Command::Help => {}
+        Command::Agent { config, once } => {
+            let ok = agent::run(&config, once).await?;
+            return Ok(if ok { ExitCode::SUCCESS } else { ExitCode::from(1) });
+        }
     }
     Ok(ExitCode::SUCCESS)
 }
