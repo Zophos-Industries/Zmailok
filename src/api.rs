@@ -94,6 +94,11 @@ impl Api {
         Err(explain(status.as_u16(), &resp.text().await.unwrap_or_default()))
     }
 
+    /// Sends the agent's latest check to the dashboard (paying accounts only).
+    pub async fn agent_report(&self, report: &serde_json::Value) -> Result<(), AppError> {
+        self.send(self.http.post(self.url("/api/agent/report")).json(report), true).await.map(drop)
+    }
+
     pub async fn account(&self) -> Result<Account, AppError> {
         self.send(self.http.get(self.url("/api/me")), true).await?.json().await.map_err(network_err)
     }

@@ -178,7 +178,30 @@ async fn cycle(cfg: &Config, state: &mut State) -> anyhow::Result<bool> {
     if !alerts.is_empty() {
         post_webhook(cfg, &alerts).await;
     }
+    report_to_service(cfg, &rows, &alerts, all_ok).await;
     Ok(all_ok)
+}
+
+/// Shows this check on the zmailok dashboard. Only for a logged-in, paying account; otherwise nothing is sent.
+async fn report_to_service(cfg: &Config, rows: &[(bool, &str, String)], alerts: &[String], all_ok: bool) {
+    let Ok(Some(token)) = crate::store::load() else { return };
+    let api = match crate::api::Api::new(Some(token)) {
+        Ok(api) => api,
+        Err(e) => {
+            eprintln!("{} {e}", "warning:".yellow());
+            return;
+        }
+    };
+    let body = serde_json::json!({
+        "ip": cfg.ip.to_string(),
+        "domain": cfg.domain,
+        "status": if all_ok { "ok" } else { "attention" },
+        "alerts": alerts,
+        "checks": rows.iter().map(|(ok, name, detail)| serde_json::json!({ "name": name, "passed": ok, "detail": detail })).collect::<Vec<_>>(),
+    });
+    if let Err(e) = api.agent_report(&body).await {
+        eprintln!("{} could not send the report to the dashboard: {e}", "warning:".yellow());
+    }
 }
 
 fn print_report(cfg: &Config, rows: &[(bool, &str, String)], all_ok: bool) {
