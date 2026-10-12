@@ -16,11 +16,14 @@ pub fn spf_terms(txt: &str) -> Vec<String> {
     txt.split_whitespace().skip(1).map(String::from).collect()
 }
 
-/// `include:` targets, with or without a qualifier (`include:x`, `~include:x`).
+/// `include:` targets, with or without a qualifier (`include:x`, `~include:x`). Targets with SPF macros
+/// (`%{ir}.%{v}.%{d}.spf.example.com`) are skipped: they are expanded per sender and are not DNS names.
 pub fn spf_includes(terms: &[String]) -> Vec<String> {
     terms
         .iter()
-        .filter_map(|t| t.trim_start_matches(QUALIFIERS).strip_prefix("include:").map(String::from))
+        .filter_map(|t| t.trim_start_matches(QUALIFIERS).strip_prefix("include:"))
+        .filter(|target| !target.contains('%'))
+        .map(String::from)
         .collect()
 }
 
@@ -78,6 +81,12 @@ mod tests {
     fn spf_includes_with_and_without_qualifier() {
         let terms = spf_terms("v=spf1 ip4:1.2.3.4 include:a.example ~include:b.example -include:c.example mx ~all");
         assert_eq!(spf_includes(&terms), ["a.example", "b.example", "c.example"]);
+    }
+
+    #[test]
+    fn macro_includes_are_not_looked_up() {
+        let terms = spf_terms("v=spf1 include:%{ir}.%{v}.%{d}.spf.has.pphosted.com include:_spf.google.com include:a%{d}.example ~all");
+        assert_eq!(spf_includes(&terms), ["_spf.google.com"]);
     }
 
     #[test]

@@ -113,7 +113,9 @@ pub async fn check_spf(r: &TokioAsyncResolver, domain: &str) -> Result<Option<Sp
             continue;
         }
         seen.push(target.clone());
-        if let Some(rec) = find(txt_records(r, &target).await?) {
+        // An include that cannot be looked up (odd name, lookup error) is skipped: one bad include
+        // in somebody's SPF record must not make the whole check fail.
+        if let Some(rec) = find(txt_records(r, &target).await.unwrap_or_default()) {
             // an included record's own "all" is not this domain's policy
             let inner: Vec<String> = parse::spf_terms(&rec).into_iter().filter(|t| !parse::is_all(t)).collect();
             queue.extend(parse::spf_includes(&inner));
