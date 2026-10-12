@@ -64,6 +64,12 @@ Every failed check adds one line to the fix list.
 
 **Checks that do not apply are left out.** PTR, rDNS and the blacklists look at one mail server's IP address (see below). When there is no such address to look at, those 30 points are left out and the score is scaled, so a domain that passes everything that applies to it gets 100. The report says when this happened.
 
+### How the score is double-checked
+
+- Every score is recomputed by a second, separately written calculation before it is shown. If the two ever disagree, zmailok stops with an error instead of printing a number.
+- The tests run both calculations on every possible combination of results (49,152 of them) and require them to agree, and that passing one more check never lowers a score.
+- The hosted monitor does the same before it stores a score or sends an alert, and it skips a domain for that round if any of its lookups timed out.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -82,7 +88,7 @@ So `zmailok check example.com || echo "deliverability problem"` and CI checks wo
   - **You pass `--ip <address>`:** that address is checked, always. Use it for your own mail server, including when you send through a service *and* run a server of your own.
 - **IPv4 only.** IPv6 addresses are not checked.
 - **DKIM selectors are arbitrary.** A domain can use any name, so a missing key may just mean a selector zmailok did not try. Find yours in a message header (`DKIM-Signature: ... s=<selector>`) and pass it with `--dkim-selector`.
-- **Timeouts.** Each DNS lookup waits at most 5 seconds. A lookup that times out counts as "not found", so run it again if your network is unreliable. zmailok ignores DNS servers from your system settings that do not answer, so a stale entry on an unused network adapter does not slow it down.
+- **Timeouts.** Each DNS lookup waits at most 5 seconds (and retries once). If a check's lookups still get no answer, it is shown as **could not be verified** and left out of the score: a bad network never turns into a failed check or a made-up fix. Run it again. zmailok ignores DNS servers from your system settings that do not answer, so a stale entry on an unused network adapter does not slow it down.
 - **Blacklists** are queried through your normal DNS resolver. Spamhaus refuses queries from some public resolvers (such as 8.8.8.8). zmailok does not treat that refusal as a listing, but it also cannot see a listing in that case.
 
 ## Hosted monitoring (optional, paid)
@@ -118,6 +124,7 @@ zmailok logout
 ```sh
 cargo build
 cargo test      # parsing, scoring and CLI logic; no network needed
+cargo test -- --ignored   # only the slow test where every DNS lookup times out
 ```
 
 The checker is a library as well as a command: `zmailok::dns::check`, `zmailok::score::compute` and `zmailok::output::print_report` are public. The hosted service is a separate, private project.

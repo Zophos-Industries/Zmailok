@@ -77,6 +77,8 @@ pub struct DnsResults {
     pub senders: Vec<String>,
     /// The IP that PTR, rDNS and the blacklists were checked on. None = those checks were skipped.
     pub ip_checked: Option<Ipv4Addr>,
+    /// Checks whose DNS lookups timed out: they could not be verified, so they are left out of the score.
+    pub unverified: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

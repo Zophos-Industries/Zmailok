@@ -5,14 +5,16 @@ use crate::types::{CheckResult, DnsResults, Score};
 const IP_CHECKS: [&str; 3] = ["PTR", "rDNS", "Blacklist"];
 
 /// Weights: SPF 15, DKIM 20, DMARC 15, DMARC policy 10, PTR 10, rDNS 10, MX 10, blacklist 10 (100 in
-/// total). Checks that do not apply are left out of both sides, so a domain that passes everything that
-/// applies to it scores 100.
+/// total). Checks that do not apply, or that could not be verified because their DNS lookups timed out,
+/// are left out of both sides, so a domain that passes everything that was checked scores 100.
+/// Every score is re-computed independently by `verify::verify` before it is used.
 pub fn compute(results: &DnsResults) -> Score {
     let policy_enforced = results
         .dmarc
         .as_ref()
         .is_some_and(|d| !d.policy.eq_ignore_ascii_case("none"));
     let ip_applies = results.ip_checked.is_some();
+    let unverified = |name: &str| results.unverified.iter().any(|u| u == name);
 
     // (name, passed, points, fix shown when failed)
     let checks: [(&str, bool, u32, &str); 8] = [
@@ -38,7 +40,10 @@ pub fn compute(results: &DnsResults) -> Score {
     let mut check_results = Vec::new();
     let mut fixes = Vec::new();
     for (name, passed, points, fix) in checks {
-        if !ip_applies && IP_CHECKS.contains(&name) {
+        let left_out = (!ip_applies && IP_CHECKS.contains(&name))
+            || unverified(name)
+            || (name == "DMARC policy" && unverified("DMARC"));
+        if left_out {
             continue;
         }
         possible += points;
@@ -49,16 +54,28 @@ pub fn compute(results: &DnsResults) -> Score {
         }
         check_results.push(CheckResult { name: name.to_string(), passed, detail: None });
     }
-    let total = ((earned * 100 + possible / 2) / possible) as u8;
-    Score { total, checks: check_results, fixes, note: (!ip_applies).then(|| skipped_note(results)) }
+    let total = if possible == 0 { 0 } else { ((earned * 100 + possible / 2) / possible) as u8 };
+    Score { total, checks: check_results, fixes, note: note(results) }
 }
 
-fn skipped_note(results: &DnsResults) -> String {
-    if results.senders.is_empty() {
-        "PTR, rDNS and blacklist were not checked: no IP address was found for this domain. Pass --ip <address> to check your mail server.".into()
-    } else {
-        "PTR, rDNS and blacklist were not checked: this domain also sends through third-party services, and those checks apply to a mail server's own IP. Pass --ip <address> to check yours.".into()
+/// Says what was left out of the score and why.
+fn note(results: &DnsResults) -> Option<String> {
+    let mut parts = Vec::new();
+    let unverified_ip = IP_CHECKS.iter().all(|n| results.unverified.iter().any(|u| u == n));
+    if results.ip_checked.is_none() && !unverified_ip {
+        parts.push(if results.senders.is_empty() {
+            "PTR, rDNS and blacklist were not checked: no IP address was found for this domain. Pass --ip <address> to check your mail server.".to_string()
+        } else {
+            "PTR, rDNS and blacklist were not checked: this domain also sends through third-party services, and those checks apply to a mail server's own IP. Pass --ip <address> to check yours.".to_string()
+        });
     }
+    if !results.unverified.is_empty() {
+        parts.push(format!(
+            "Could not verify {} because DNS lookups timed out. They are not counted in the score; run the check again.",
+            results.unverified.join(", ")
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join(" "))
 }
 
 #[cfg(test)]
@@ -76,12 +93,13 @@ mod tests {
             rdns: Some("mail.example.com".into()),
             blacklisted: false,
             senders: vec![],
+            unverified: vec![],
             ip_checked: Some("203.0.113.5".parse().unwrap()),
         }
     }
 
     fn empty() -> DnsResults {
-        DnsResults { spf: None, dkim: None, dmarc: None, mx: None, ptr: None, rdns: None, blacklisted: false, senders: vec![], ip_checked: Some("203.0.113.5".parse().unwrap()) }
+        DnsResults { spf: None, dkim: None, dmarc: None, mx: None, ptr: None, rdns: None, blacklisted: false, senders: vec![], ip_checked: Some("203.0.113.5".parse().unwrap()), unverified: vec![] }
     }
 
     /// What a domain that sends through Google Workspace looks like: IP checks skipped.

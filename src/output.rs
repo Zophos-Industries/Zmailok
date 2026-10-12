@@ -15,6 +15,9 @@ pub fn print_report(domain: &str, results: &DnsResults, score: &Score) {
         let detail = check.detail.clone().unwrap_or_else(|| detail_for(&check.name, results));
         println!("  {}   {:<13}{}", mark, check.name, detail);
     }
+    for name in &results.unverified {
+        println!("  {}   {:<13}{}", "?".yellow(), name, "could not be verified (DNS lookups timed out)".dimmed());
+    }
     if let Some(note) = &score.note {
         println!("\n  {}", note.dimmed());
     }
