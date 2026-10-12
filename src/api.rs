@@ -13,6 +13,22 @@ pub struct DomainRow {
     pub last_checked: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct CheckedRow {
+    pub name: String,
+    pub passed: bool,
+}
+
+/// The answer to "check now": the score the monitor would compute, for one domain, right away.
+#[derive(Deserialize)]
+pub struct CheckNow {
+    pub domain: String,
+    pub score: u8,
+    pub checks: Vec<CheckedRow>,
+    pub fixes: Vec<String>,
+    pub note: Option<String>,
+}
+
 /// Client for the hosted zmailok service (login and monitoring). `zmailok check` never uses it.
 pub struct Api {
     base: String,
@@ -40,7 +56,8 @@ fn explain(status: u16, body: &str) -> AppError {
         402 => AppError::Api("monitoring needs a subscription ($5/month, 5 domains). Run: zmailok upgrade".into()),
         403 => AppError::Api("domain limit reached (5 domains per account). Remove one first: zmailok monitor remove <domain>".into()),
         409 => AppError::Api("you are already subscribed".into()),
-        429 => AppError::Api("too many requests, try again later".into()),
+        404 => AppError::Api("that domain is not in your monitored list. Add it first: zmailok monitor add <domain>".into()),
+        429 => AppError::Api("too many requests: a domain can be re-checked once a minute, try again shortly".into()),
         400 => AppError::Api(format!("the service rejected the request: {short}")),
         s if s >= 500 => AppError::Api(format!("the zmailok service has a problem (HTTP {s}), try again later")),
         s => AppError::Api(format!("unexpected answer from the service (HTTP {s}): {short}")),
@@ -103,6 +120,11 @@ impl Api {
         body["url"].as_str().map(String::from).ok_or_else(|| AppError::Api("the service returned no checkout link".into()))
     }
 
+    /// Runs a check on the service right now for one of your monitored domains and stores the score.
+    pub async fn check_now(&self, domain: &str) -> Result<CheckNow, AppError> {
+        self.send(self.http.post(self.url(&format!("/api/domains/{domain}/check"))), true).await?.json().await.map_err(network_err)
+    }
+
     pub async fn logout(&self) -> Result<(), AppError> {
         self.send(self.http.post(self.url("/auth/logout")), true).await.map(drop)
     }
@@ -128,6 +150,8 @@ mod tests {
         assert!(explain(402, "").to_string().contains("zmailok upgrade"));
         assert!(explain(403, "").to_string().contains("5 domains"));
         assert!(explain(409, "").to_string().contains("already subscribed"));
+        assert!(explain(404, "").to_string().contains("monitor add"));
+        assert!(explain(429, "").to_string().contains("once a minute"));
         assert!(explain(503, "x").to_string().contains("HTTP 503"));
         assert!(explain(418, &"y".repeat(500)).to_string().len() < 200);
     }

@@ -94,6 +94,7 @@ zmailok login                  # log in with GitHub: you get a code, approve it 
 zmailok upgrade                # prints the checkout link for the subscription
 zmailok monitor add example.com
 zmailok monitor list
+zmailok monitor check example.com    # re-check right now (once a minute per domain)
 zmailok monitor remove example.com
 zmailok logout
 ```

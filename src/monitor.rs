@@ -50,3 +50,26 @@ pub async fn upgrade(api: &Api) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+/// "Check now" for a monitored domain. Returns whether the score passes (for the exit code).
+pub async fn check(api: &Api, raw: &str) -> Result<bool, AppError> {
+    let domain = domain::normalize(raw)?;
+    let r = api.check_now(&domain).await?;
+    println!("{} — {}/100  (checked just now, the stored score is updated)\n", r.domain, r.score);
+    for c in &r.checks {
+        println!("  {}   {}", if c.passed { "✓".green() } else { "✗".red() }, c.name);
+    }
+    if let Some(note) = &r.note {
+        println!("\n  {}", note.dimmed());
+    }
+    let passed = r.score >= PASS_SCORE;
+    let n = r.fixes.len();
+    println!("\n  {} {}/100 — {} — {} {} found", "Score:".bold(), r.score, if passed { "OK" } else { "NOT OK" }, n, if n == 1 { "issue" } else { "issues" });
+    if !r.fixes.is_empty() {
+        println!("\n  {}", "Fixes:".bold());
+        for (i, fix) in r.fixes.iter().enumerate() {
+            println!("  {}. {fix}", i + 1);
+        }
+    }
+    Ok(passed)
+}

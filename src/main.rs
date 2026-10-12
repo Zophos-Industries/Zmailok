@@ -56,6 +56,8 @@ enum MonitorAction {
     Add { domain: String },
     /// Stop monitoring a domain
     Remove { domain: String },
+    /// Check a monitored domain right now instead of waiting for the next 6-hourly check (once a minute per domain)
+    Check { domain: String },
 }
 
 #[tokio::main]
@@ -89,6 +91,10 @@ async fn run(command: Command) -> anyhow::Result<ExitCode> {
             MonitorAction::List => monitor::list(&api()?).await?,
             MonitorAction::Add { domain } => monitor::add(&api()?, &domain).await?,
             MonitorAction::Remove { domain } => monitor::remove(&api()?, &domain).await?,
+            MonitorAction::Check { domain } => {
+                let passed = monitor::check(&api()?, &domain).await?;
+                return Ok(if passed { ExitCode::SUCCESS } else { ExitCode::from(1) });
+            }
         },
         Command::Upgrade => monitor::upgrade(&api()?).await?,
     }
