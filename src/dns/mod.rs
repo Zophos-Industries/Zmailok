@@ -1,5 +1,6 @@
 mod parse;
 mod resolver;
+mod senders;
 
 use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr};
@@ -21,10 +22,12 @@ pub async fn check(domain: &str) -> anyhow::Result<DnsResults> {
     check_with(domain, &CheckOptions::default()).await
 }
 
-/// `options.ip` is the sending server's address for the PTR, rDNS and blacklist checks. By default it is
-/// the domain's own A record, which is wrong for domains whose website and mail server differ.
+/// `options.ip` is the address of the mail server, for the PTR, rDNS and blacklist checks. Without it
+/// those checks look at the domain's own A record, but only when that makes sense: if the SPF record
+/// shows the domain sends through Google, SendGrid and the like, the A record is just the website and
+/// the checks are skipped (pass `--ip` to run them on your own server anyway).
 pub async fn check_with(domain: &str, options: &CheckOptions) -> anyhow::Result<DnsResults> {
-    let (ip, selector) = (options.ip, options.dkim_selector.as_deref());
+    let selector = options.dkim_selector.as_deref();
     let r = resolver::system_resolver().await?;
     let (resolved, spf, dkim, dmarc, mx) = tokio::join!(
         resolve_domain(&r, domain),
@@ -37,12 +40,15 @@ pub async fn check_with(domain: &str, options: &CheckOptions) -> anyhow::Result<
     if nxdomain {
         return Err(AppError::DomainNotFound.into());
     }
+    let spf = spf?;
+    let senders = spf.as_ref().map(|s| senders::detect(&s.raw)).unwrap_or_default();
+    let ip_checked = options.ip.or(if senders.is_empty() { found_ip } else { None });
     // One address for all three checks, so round-robin DNS cannot make them look at different servers.
-    let (ptr, rdns, bl) = match ip.or(found_ip) {
+    let (ptr, rdns, bl) = match ip_checked {
         Some(ip) => tokio::join!(check_ptr(&r, ip), check_rdns(&r, ip), check_blacklists(&r, ip)),
         None => (Ok(None), Ok(None), Ok(None)),
     };
-    Ok(DnsResults { spf: spf?, dkim: dkim?, dmarc: dmarc?, mx: mx?, ptr: ptr?, rdns: rdns?, blacklisted: bl?.unwrap_or(false) })
+    Ok(DnsResults { spf, dkim: dkim?, dmarc: dmarc?, mx: mx?, ptr: ptr?, rdns: rdns?, blacklisted: bl?.unwrap_or(false), senders, ip_checked })
 }
 
 /// Runs the lookup with a 5s timeout and retries once if it timed out. None = timed out twice.

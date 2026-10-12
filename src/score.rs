@@ -1,13 +1,21 @@
 use crate::types::{CheckResult, DnsResults, Score};
 
+/// The checks that look at one server's IP address. They are left out when there is no mail server IP
+/// to look at (see `DnsResults::ip_checked`).
+const IP_CHECKS: [&str; 3] = ["PTR", "rDNS", "Blacklist"];
+
+/// Weights: SPF 15, DKIM 20, DMARC 15, DMARC policy 10, PTR 10, rDNS 10, MX 10, blacklist 10 (100 in
+/// total). Checks that do not apply are left out of both sides, so a domain that passes everything that
+/// applies to it scores 100.
 pub fn compute(results: &DnsResults) -> Score {
     let policy_enforced = results
         .dmarc
         .as_ref()
         .is_some_and(|d| !d.policy.eq_ignore_ascii_case("none"));
+    let ip_applies = results.ip_checked.is_some();
 
     // (name, passed, points, fix shown when failed)
-    let checks: [(&str, bool, u8, &str); 8] = [
+    let checks: [(&str, bool, u32, &str); 8] = [
         ("SPF", results.spf.is_some(), 15,
          "Add SPF: publish a TXT record on <domain> starting with \"v=spf1\" that lists your sending servers and ends with ~all or -all"),
         ("DKIM", results.dkim.is_some(), 20,
@@ -26,18 +34,31 @@ pub fn compute(results: &DnsResults) -> Score {
          "Get delisted: your IP is on a blacklist (Spamhaus, Barracuda or SORBS). Find the cause and request removal"),
     ];
 
-    let mut total = 0;
+    let (mut earned, mut possible) = (0, 0);
     let mut check_results = Vec::new();
     let mut fixes = Vec::new();
     for (name, passed, points, fix) in checks {
+        if !ip_applies && IP_CHECKS.contains(&name) {
+            continue;
+        }
+        possible += points;
         if passed {
-            total += points;
+            earned += points;
         } else {
             fixes.push(fix.to_string());
         }
         check_results.push(CheckResult { name: name.to_string(), passed, detail: None });
     }
-    Score { total, checks: check_results, fixes }
+    let total = ((earned * 100 + possible / 2) / possible) as u8;
+    Score { total, checks: check_results, fixes, note: (!ip_applies).then(|| skipped_note(results)) }
+}
+
+fn skipped_note(results: &DnsResults) -> String {
+    if results.senders.is_empty() {
+        "PTR, rDNS and blacklist were not checked: no IP address was found for this domain. Pass --ip <address> to check your mail server.".into()
+    } else {
+        "PTR, rDNS and blacklist were not checked: this domain also sends through third-party services, and those checks apply to a mail server's own IP. Pass --ip <address> to check yours.".into()
+    }
 }
 
 #[cfg(test)]
@@ -54,11 +75,21 @@ mod tests {
             ptr: Some(PtrRecord { hostname: "mail.example.com".into() }),
             rdns: Some("mail.example.com".into()),
             blacklisted: false,
+            senders: vec![],
+            ip_checked: Some("203.0.113.5".parse().unwrap()),
         }
     }
 
     fn empty() -> DnsResults {
-        DnsResults { spf: None, dkim: None, dmarc: None, mx: None, ptr: None, rdns: None, blacklisted: false }
+        DnsResults { spf: None, dkim: None, dmarc: None, mx: None, ptr: None, rdns: None, blacklisted: false, senders: vec![], ip_checked: Some("203.0.113.5".parse().unwrap()) }
+    }
+
+    /// What a domain that sends through Google Workspace looks like: IP checks skipped.
+    fn via_google(mut r: DnsResults) -> DnsResults {
+        r.senders = vec!["Google Workspace".into()];
+        r.ip_checked = None;
+        (r.ptr, r.rdns, r.blacklisted) = (None, None, false);
+        r
     }
 
     #[test]
@@ -68,6 +99,7 @@ mod tests {
         assert!(s.fixes.is_empty());
         assert_eq!(s.checks.len(), 8);
         assert!(s.checks.iter().all(|c| c.passed));
+        assert!(s.note.is_none());
     }
 
     #[test]
@@ -99,5 +131,46 @@ mod tests {
         let s = compute(&r);
         assert_eq!(s.fixes.len(), 2);
         assert!(s.fixes[0].contains("DKIM"));
+    }
+
+    #[test]
+    fn skipped_ip_checks_do_not_cost_points() {
+        let s = compute(&via_google(perfect()));
+        assert_eq!(s.total, 100);
+        assert!(s.fixes.is_empty());
+        let names: Vec<&str> = s.checks.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["SPF", "DKIM", "DMARC", "DMARC policy", "MX"]);
+        let note = s.note.unwrap();
+        assert!(note.contains("third-party") && note.contains("--ip"), "{note}");
+    }
+
+    #[test]
+    fn score_is_scaled_to_what_applies() {
+        let mut r = via_google(perfect());
+        r.dkim = None; // 50 of 70 applicable points = 71
+        assert_eq!(compute(&r).total, 71);
+        r.mx = None; // 40 of 70 = 57
+        assert_eq!(compute(&r).total, 57);
+        assert_eq!(compute(&via_google(empty())).total, 0);
+    }
+
+    #[test]
+    fn no_ip_and_no_known_service_says_so() {
+        let mut r = perfect();
+        r.ip_checked = None;
+        (r.ptr, r.rdns) = (None, None);
+        let s = compute(&r);
+        assert_eq!(s.total, 100);
+        assert!(s.note.unwrap().contains("no IP address"));
+    }
+
+    #[test]
+    fn passing_ip_forces_the_checks_even_for_third_party_senders() {
+        let mut r = perfect();
+        r.senders = vec!["SendGrid".into()]; // detected, but the user gave --ip so ip_checked is Some
+        r.ptr = None;
+        let s = compute(&r);
+        assert_eq!((s.total, s.checks.len()), (90, 8));
+        assert!(s.note.is_none());
     }
 }

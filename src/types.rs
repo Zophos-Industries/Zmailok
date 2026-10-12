@@ -73,6 +73,10 @@ pub struct DnsResults {
     pub ptr: Option<PtrRecord>,
     pub rdns: Option<String>,
     pub blacklisted: bool,
+    /// Third-party services named in the domain's SPF includes (Google Workspace, SendGrid, ...).
+    pub senders: Vec<String>,
+    /// The IP that PTR, rDNS and the blacklists were checked on. None = those checks were skipped.
+    pub ip_checked: Option<Ipv4Addr>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -87,4 +91,6 @@ pub struct Score {
     pub total: u8,
     pub checks: Vec<CheckResult>,
     pub fixes: Vec<String>,
+    /// Explains checks that were left out of the score.
+    pub note: Option<String>,
 }

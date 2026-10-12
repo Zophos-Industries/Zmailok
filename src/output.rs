@@ -6,21 +6,22 @@ pub const PASS_SCORE: u8 = 80;
 
 pub fn print_report(domain: &str, results: &DnsResults, score: &Score) {
     println!("{} — {}/100\n", domain, score.total);
+    if !results.senders.is_empty() {
+        println!("  Also sends through: {}\n", results.senders.join(", "));
+    }
 
     for check in &score.checks {
         let mark = if check.passed { "✓".green() } else { "✗".red() };
         let detail = check.detail.clone().unwrap_or_else(|| detail_for(&check.name, results));
         println!("  {}   {:<13}{}", mark, check.name, detail);
     }
+    if let Some(note) = &score.note {
+        println!("\n  {}", note.dimmed());
+    }
 
     let status = if score.total >= PASS_SCORE { "OK" } else { "NOT OK" };
-    println!(
-        "\n  {} {}/100 — {} — {} issues found",
-        "Score:".bold(),
-        score.total,
-        status,
-        score.fixes.len()
-    );
+    let n = score.fixes.len();
+    println!("\n  {} {}/100 — {} — {} {} found", "Score:".bold(), score.total, status, n, if n == 1 { "issue" } else { "issues" });
 
     if !score.fixes.is_empty() {
         println!("\n  {}", "Fixes:".bold());

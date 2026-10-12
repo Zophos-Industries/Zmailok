@@ -42,7 +42,7 @@ zmailok check example.com
 | Option | What it does |
 | --- | --- |
 | `--json` | Print the full result as JSON (for scripts and CI) |
-| `--ip 203.0.113.5` | The IPv4 address your mail is sent from, used for the PTR, rDNS and blacklist checks |
+| `--ip 203.0.113.5` | The IPv4 address of your mail server, used for the PTR, rDNS and blacklist checks (see [Good to know](#good-to-know)) |
 | `--dkim-selector mail2024` | A DKIM selector to try first, in addition to the built-in list |
 
 ### What is checked
@@ -62,6 +62,8 @@ The score is out of 100:
 
 Every failed check adds one line to the fix list.
 
+**Checks that do not apply are left out.** PTR, rDNS and the blacklists look at one mail server's IP address (see below). When there is no such address to look at, those 30 points are left out and the score is scaled, so a domain that passes everything that applies to it gets 100. The report says when this happened.
+
 ### Exit codes
 
 | Code | Meaning |
@@ -74,7 +76,10 @@ So `zmailok check example.com || echo "deliverability problem"` and CI checks wo
 
 ### Good to know
 
-- **Which IP is checked?** The PTR, rDNS and blacklist checks look at one IP address. By default that is the domain's own **A record**, which is the web server and often not the mail server (or it belongs to a CDN). If your mail leaves from a different server, pass it with `--ip`.
+- **Which IP is checked?** PTR, rDNS and the blacklists look at one IP address, and which one depends on the domain:
+  - **Sends through a service like Google Workspace, Microsoft 365, SendGrid, Amazon SES, Mailgun or Mailchimp** (zmailok reads this from the `include:` entries of the SPF record, and lists what it found as "Also sends through"): these checks are **skipped**. The domain's A record is just its website, and those services control their own mail servers.
+  - **No such service in the SPF record:** the domain's own **A record** is used.
+  - **You pass `--ip <address>`:** that address is checked, always. Use it for your own mail server, including when you send through a service *and* run a server of your own.
 - **IPv4 only.** IPv6 addresses are not checked.
 - **DKIM selectors are arbitrary.** A domain can use any name, so a missing key may just mean a selector zmailok did not try. Find yours in a message header (`DKIM-Signature: ... s=<selector>`) and pass it with `--dkim-selector`.
 - **Timeouts.** Each DNS lookup waits at most 5 seconds. A lookup that times out counts as "not found", so run it again if your network is unreliable. zmailok ignores DNS servers from your system settings that do not answer, so a stale entry on an unused network adapter does not slow it down.

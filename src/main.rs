@@ -28,7 +28,7 @@ enum Command {
         /// Print the result as JSON
         #[arg(long)]
         json: bool,
-        /// Your sending server's IPv4 address, for the PTR, rDNS and blacklist checks (default: the domain's A record)
+        /// Your mail server's IPv4 address, for the PTR, rDNS and blacklist checks (default: the domain's A record, skipped if the domain sends through Google, SendGrid and the like)
         #[arg(long)]
         ip: Option<Ipv4Addr>,
         /// A DKIM selector to try first (selectors are arbitrary, so the built-in list can miss yours)
